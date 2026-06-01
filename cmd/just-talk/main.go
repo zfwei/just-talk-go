@@ -7,6 +7,8 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/c/just-talk-go/config"
 	"github.com/c/just-talk-go/engine"
@@ -27,10 +29,18 @@ func main() {
 	useTUI := flag.Bool("tui", true, "run with terminal UI")
 	noTUI := flag.Bool("no-tui", false, "run without terminal UI")
 	doctorOnly := flag.Bool("doctor", false, "run startup doctor and exit")
+	installOnly := flag.Bool("install", false, "install just-talk to ~/.local/bin")
 	overlayHelper := flag.Bool("overlay-helper", false, "run macOS overlay helper")
 	overlayPosition := flag.String("overlay-position", "top-right", "overlay helper position")
 	overlayScale := flag.Float64("overlay-scale", 1.0, "overlay helper scale")
 	flag.Parse()
+	if *installOnly {
+		if err := installSelf(); err != nil {
+			fmt.Fprintf(os.Stderr, "install failed: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if *overlayHelper {
 		if err := overlay.RunHelper(*overlayPosition, *overlayScale, os.Stdin); err != nil {
 			fmt.Fprintf(os.Stderr, "overlay helper error: %v\n", err)
@@ -155,4 +165,103 @@ func printTroubleshooting(err error) {
 	fmt.Fprintf(os.Stderr, "  X11:      Ensure $DISPLAY is set\n")
 	fmt.Fprintf(os.Stderr, "  Wayland:  Add user to 'input' group\n")
 	fmt.Fprintf(os.Stderr, "  macOS:    Grant Accessibility permission\n")
+}
+
+func installSelf() error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("find home directory: %w", err)
+	}
+	targetDir := filepath.Join(home, ".local", "bin")
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		return fmt.Errorf("create %s: %w", targetDir, err)
+	}
+
+	src, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("find current executable: %w", err)
+	}
+	if resolved, err := filepath.EvalSymlinks(src); err == nil {
+		src = resolved
+	}
+	target := filepath.Join(targetDir, "just-talk")
+	if samePath(src, target) {
+		fmt.Fprintf(os.Stdout, "just-talk is already installed at %s\n", target)
+		printInstallPathNote(targetDir)
+		return nil
+	}
+
+	in, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("open current executable %s: %w", src, err)
+	}
+	defer in.Close()
+
+	tmp, err := os.CreateTemp(targetDir, ".just-talk-*")
+	if err != nil {
+		return fmt.Errorf("create temporary installer file: %w", err)
+	}
+	tmpName := tmp.Name()
+	ok := false
+	defer func() {
+		if !ok {
+			_ = os.Remove(tmpName)
+		}
+	}()
+
+	if _, err := io.Copy(tmp, in); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("copy executable: %w", err)
+	}
+	if err := tmp.Chmod(0755); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("set executable mode: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temporary installer file: %w", err)
+	}
+	if err := os.Rename(tmpName, target); err != nil {
+		return fmt.Errorf("install to %s: %w", target, err)
+	}
+	ok = true
+
+	fmt.Fprintf(os.Stdout, "Installed just-talk to %s\n", target)
+	printInstallPathNote(targetDir)
+	return nil
+}
+
+func samePath(a, b string) bool {
+	absA, errA := filepath.Abs(a)
+	absB, errB := filepath.Abs(b)
+	if errA == nil {
+		a = absA
+	}
+	if errB == nil {
+		b = absB
+	}
+	if resolved, err := filepath.EvalSymlinks(b); err == nil {
+		b = resolved
+	}
+	return a == b
+}
+
+func printInstallPathNote(dir string) {
+	if !pathContains(dir) {
+		fmt.Fprintf(os.Stdout, "Note: %s is not in PATH. Add it to your shell profile to run just-talk directly.\n", dir)
+	}
+}
+
+func pathContains(dir string) bool {
+	for _, p := range filepath.SplitList(os.Getenv("PATH")) {
+		if p == dir {
+			return true
+		}
+		if rel, err := filepath.Rel(p, dir); err == nil && rel == "." {
+			return true
+		}
+		if strings.TrimRight(p, string(os.PathSeparator)) == strings.TrimRight(dir, string(os.PathSeparator)) {
+			return true
+		}
+	}
+	return false
 }

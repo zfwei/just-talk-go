@@ -17,6 +17,10 @@ All notable project changes are tracked here.
 - Show ASR connection and final-result timeout errors in the status UI/overlay instead of immediately falling back to idle.
 - Added transient `Esc` cancel and `R` retry hotkeys while recording or showing retryable errors.
 - Improved X11 overlay placement on multi-monitor setups and switched X11 rendering to an ARGB window for smoother rounded corners.
+- Fixed a Wayland overlay shutdown race that could crash while closing the app, and surfaced Linux `arecord` microphone/device failures in the UI.
+- Made `Esc` cancel active overlay states, including the final ASR wait state, and suppress output from canceled pending sessions.
+- Improved Wayland overlay rounded-corner antialiasing, especially on KDE Plasma.
+- Added `just-talk --install` and `make install` to install the binary into `~/.local/bin`.
 
 ## 2026-05-30
 

@@ -71,6 +71,7 @@ import (
 	"os"
 	"runtime/cgo"
 	"strings"
+	"sync"
 	"unsafe"
 
 	"github.com/c/just-talk-go/config"
@@ -78,6 +79,7 @@ import (
 )
 
 type waylandBackend struct {
+	mu           sync.Mutex
 	display      *C.struct_wl_display
 	registry     *C.struct_wl_registry
 	compositor   *C.struct_wl_compositor
@@ -92,6 +94,7 @@ type waylandBackend struct {
 	handle       cgo.Handle
 	configured   bool
 	closed       bool
+	destroyed    bool
 	visible      bool
 	position     string
 	scale        float64
@@ -144,7 +147,9 @@ func newWaylandBackend(cfg config.OverlayConfig) (backend, error) {
 }
 
 func (b *waylandBackend) Show(label string, color statusColor) error {
-	if b.display == nil || b.closed {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.display == nil || b.closed || b.destroyed {
 		return nil
 	}
 	b.draw(label, color)
@@ -157,7 +162,9 @@ func (b *waylandBackend) Show(label string, color statusColor) error {
 }
 
 func (b *waylandBackend) Hide() error {
-	if b.display == nil || !b.visible {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.display == nil || b.closed || b.destroyed || !b.visible {
 		return nil
 	}
 	clear(b.data)
@@ -170,6 +177,13 @@ func (b *waylandBackend) Hide() error {
 }
 
 func (b *waylandBackend) Close() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.destroyed {
+		return nil
+	}
+	b.destroyed = true
+	b.closed = true
 	if b.buffer != nil {
 		C.wl_buffer_destroy(b.buffer)
 		b.buffer = nil
@@ -293,8 +307,10 @@ func (b *waylandBackend) draw(label string, color statusColor) {
 	radius := b.h / 2
 	for y := 0; y < b.h; y++ {
 		for x := 0; x < b.w; x++ {
-			if insideRoundedRect(x, y, b.w, b.h, radius) {
-				b.setPixel(x, y, bg)
+			if coverage := waylandRoundedRectCoverage(x, y, b.w, b.h, radius); coverage > 0 {
+				c := bg
+				c.a = uint8(uint16(c.a) * uint16(coverage) / 255)
+				b.setPixel(x, y, c)
 			}
 		}
 	}
@@ -433,7 +449,20 @@ func (b *waylandBackend) scaled(v int) int {
 	return n
 }
 
-func insideRoundedRect(x, y, w, h, r int) bool {
+func waylandRoundedRectCoverage(x, y, w, h, r int) uint8 {
+	inside := 0
+	const samples = 8
+	for sy := 0; sy < samples; sy++ {
+		for sx := 0; sx < samples; sx++ {
+			if insideWaylandRoundedRectSample(x*samples+sx, y*samples+sy, w*samples, h*samples, r*samples) {
+				inside++
+			}
+		}
+	}
+	return uint8(inside * 255 / (samples * samples))
+}
+
+func insideWaylandRoundedRectSample(x, y, w, h, r int) bool {
 	if x >= r && x < w-r {
 		return true
 	}
@@ -474,6 +503,8 @@ func goOverlayLayerConfigure(handle C.uintptr_t, surface *C.struct_zwlr_layer_su
 		return
 	}
 	C.zwlr_layer_surface_v1_ack_configure(surface, serial)
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	b.configured = true
 }
 
@@ -484,5 +515,7 @@ func goOverlayLayerClosed(handle C.uintptr_t, surface *C.struct_zwlr_layer_surfa
 	if !ok {
 		return
 	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	b.closed = true
 }

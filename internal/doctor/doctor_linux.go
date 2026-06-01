@@ -61,8 +61,8 @@ func recordingBackendCheck() Check {
 	return commandAnyCheck(
 		"录音后端",
 		Required,
-		[]string{"arecord", "parec", "pw-record"},
-		"安装当前实现支持的录音后端：alsa-utils(arecord)、pulseaudio-utils(parec) 或 pipewire-bin(pw-record)。",
+		[]string{"arecord"},
+		"安装 alsa-utils，确保 arecord 可用。",
 	)
 }
 

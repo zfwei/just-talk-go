@@ -58,6 +58,14 @@ xcode-select --install
 CGO_ENABLED=1 go build -o build/just-talk ./cmd/just-talk
 ```
 
+安装到 `~/.local/bin/just-talk`：
+
+```bash
+build/just-talk --install
+# 或
+make install
+```
+
 macOS 需要在本机 macOS 上构建；项目不提供非 cgo 版本。
 
 ## 使用

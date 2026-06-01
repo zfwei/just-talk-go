@@ -58,6 +58,14 @@ Build for the current platform:
 CGO_ENABLED=1 go build -o build/just-talk ./cmd/just-talk
 ```
 
+Install to `~/.local/bin/just-talk`:
+
+```bash
+build/just-talk --install
+# or
+make install
+```
+
 macOS must be built on macOS. The project does not provide a non-cgo build.
 
 ## Usage

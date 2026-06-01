@@ -1,4 +1,4 @@
-.PHONY: build test clean run
+.PHONY: build install test clean run
 
 APP_NAME := just-talk
 CMD_DIR := ./cmd/just-talk
@@ -7,6 +7,10 @@ BUILD_DIR := ./build
 # Build for current platform
 build:
 	go build -o $(BUILD_DIR)/$(APP_NAME) $(CMD_DIR)
+
+# Install to ~/.local/bin
+install: build
+	$(BUILD_DIR)/$(APP_NAME) --install
 
 # Run (current platform)
 run:

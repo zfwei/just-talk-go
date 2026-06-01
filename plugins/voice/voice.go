@@ -258,6 +258,8 @@ type VoicePlugin struct {
 	autoSubmit             bool
 	stopDelayMs            int
 	pendingDone            int
+	finishingSessions      map[uint64]struct{}
+	canceledSessions       map[uint64]struct{}
 	errorUntil             time.Time
 	errorTimer             *time.Timer
 	lastError              string
@@ -300,9 +302,7 @@ func (p *VoicePlugin) Start(ctx context.Context) error {
 func (p *VoicePlugin) Stop() error {
 	p.mu.Lock()
 	session := p.detachRecordingLocked()
-	if session != nil {
-		p.pendingDone++
-	}
+	p.trackFinishLocked(session)
 	p.publishStatusLocked()
 	p.mu.Unlock()
 	p.finishRecordingSession(session)
@@ -496,6 +496,9 @@ func (p *VoicePlugin) startRecording() {
 		rec = NewRecorder(p.logger, vc.Gain)
 	}
 	if err := rec.Start(); err != nil {
+		p.sessionID++
+		sessionID := p.sessionID
+		p.publishErrorLocked("录音启动失败: "+shortError(err), sessionID)
 		p.mu.Unlock()
 		pout("❌ 录音启动失败: %v", err)
 		return
@@ -576,9 +579,7 @@ func (p *VoicePlugin) connectASR(ctx context.Context, cancel context.CancelFunc,
 func (p *VoicePlugin) restartRecording() {
 	p.mu.Lock()
 	session := p.detachRecordingLocked()
-	if session != nil {
-		p.pendingDone++
-	}
+	p.trackFinishLocked(session)
 	p.publishStatusLocked()
 	p.mu.Unlock()
 	if session != nil {
@@ -591,6 +592,16 @@ func (p *VoicePlugin) cancelRecording() {
 	p.mu.Lock()
 	session := p.detachRecordingLocked()
 	hadError := p.lastError != "" && time.Now().Before(p.errorUntil)
+	hadPending := p.pendingDone > 0
+	if hadPending {
+		if p.canceledSessions == nil {
+			p.canceledSessions = make(map[uint64]struct{})
+		}
+		for id := range p.finishingSessions {
+			p.canceledSessions[id] = struct{}{}
+		}
+		p.pendingDone = 0
+	}
 	p.clearErrorLocked()
 	p.publishStatusLocked()
 	p.mu.Unlock()
@@ -606,6 +617,8 @@ func (p *VoicePlugin) cancelRecording() {
 			_ = session.asrClient.Close()
 		}
 		pout("🎤 已取消本次录音")
+	} else if hadPending {
+		pout("🎤 已取消等待识别结果")
 	} else if hadError {
 		pout("⚠️  已关闭错误状态")
 	}
@@ -626,9 +639,7 @@ func (p *VoicePlugin) retryLastError() {
 func (p *VoicePlugin) stopRecordingAsync() {
 	p.mu.Lock()
 	session := p.detachRecordingLocked()
-	if session != nil {
-		p.pendingDone++
-	}
+	p.trackFinishLocked(session)
 	p.publishStatusLocked()
 	p.mu.Unlock()
 	if session != nil {
@@ -662,11 +673,22 @@ func (p *VoicePlugin) detachRecordingLocked() *recordingSession {
 	return session
 }
 
+func (p *VoicePlugin) trackFinishLocked(session *recordingSession) {
+	if session == nil {
+		return
+	}
+	p.pendingDone++
+	if p.finishingSessions == nil {
+		p.finishingSessions = make(map[uint64]struct{})
+	}
+	p.finishingSessions[session.sessionID] = struct{}{}
+}
+
 func (p *VoicePlugin) finishRecordingSession(session *recordingSession) {
 	if session == nil {
 		return
 	}
-	defer p.recordingSessionFinished()
+	defer p.recordingSessionFinished(session.sessionID)
 	pout("🎤 停止录音")
 	if session.asrClient == nil && session.asrCancel != nil {
 		session.asrCancel()
@@ -698,10 +720,12 @@ func (p *VoicePlugin) finishRecordingSession(session *recordingSession) {
 		case <-session.asrClient.Done():
 			p.logger.Debug("finish session: ASR done")
 		case <-time.After(15 * time.Second):
-			pout("⚠️  识别超时")
-			p.publishError("识别超时: 等待 ASR final 超过 15s", session.sessionID)
+			if !p.sessionCanceled(session.sessionID) {
+				pout("⚠️  识别超时")
+				p.publishError("识别超时: 等待 ASR final 超过 15s", session.sessionID)
+			}
 		}
-		if text := session.asrClient.LastText(); text != "" && session.userStopped {
+		if text := session.asrClient.LastText(); text != "" && session.userStopped && !p.sessionCanceled(session.sessionID) {
 			audioDuration := time.Duration(0)
 			if !session.startedAt.IsZero() {
 				audioDuration = time.Since(session.startedAt)
@@ -748,13 +772,22 @@ func (p *VoicePlugin) dispatchTextOutput(text string, autoSubmit bool) {
 	}()
 }
 
-func (p *VoicePlugin) recordingSessionFinished() {
+func (p *VoicePlugin) recordingSessionFinished(sessionID uint64) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	delete(p.finishingSessions, sessionID)
+	delete(p.canceledSessions, sessionID)
 	if p.pendingDone > 0 {
 		p.pendingDone--
 	}
 	p.publishStatusLocked()
+}
+
+func (p *VoicePlugin) sessionCanceled(sessionID uint64) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	_, ok := p.canceledSessions[sessionID]
+	return ok
 }
 
 func (p *VoicePlugin) publishStatusLocked() {
