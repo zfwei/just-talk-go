@@ -234,7 +234,7 @@ func (p *windowsProvider) Start(ctx context.Context) error {
 	p.logger.Info("keyboard hook installed, starting message pump")
 
 	// Message pump
-	var msg windows.MSG
+	var msg winMsg
 	for {
 		select {
 		case <-ctx.Done():
@@ -300,6 +300,16 @@ func windowsHookProc(nCode int32, wParam uintptr, lParam uintptr) uintptr {
 	}
 	ret, _, _ := procCallNextHookEx.Call(0, uintptr(nCode), wParam, lParam)
 	return ret
+}
+
+type winMsg struct {
+	Hwnd    uintptr
+	Message uint32
+	WParam  uintptr
+	LParam  uintptr
+	Time    uint32
+	PtX     int32
+	PtY     int32
 }
 
 type kbdllhookstruct struct {
