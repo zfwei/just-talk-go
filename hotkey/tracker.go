@@ -109,6 +109,11 @@ func (t *KeyStateTracker) KeyDown(key KeyCode, now time.Time) []Event {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	// Ignore OS-generated key repeat events (key is already held down)
+	if state, ok := t.pressed[key]; ok && state.pressed {
+		return nil
+	}
+
 	var events []Event
 
 	// Track key state
