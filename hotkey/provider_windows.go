@@ -234,7 +234,7 @@ func (p *windowsProvider) Start(ctx context.Context) error {
 	p.logger.Info("keyboard hook installed, starting message pump")
 
 	// Message pump
-	var msg windows.Msg
+	var msg windows.MSG
 	for {
 		select {
 		case <-ctx.Done():
