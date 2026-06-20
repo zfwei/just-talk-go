@@ -156,10 +156,11 @@ func getGlobalWinProvider() *windowsProvider {
 // ---- Provider ----
 
 type windowsProvider struct {
-	mu       sync.Mutex
-	channels map[Combo]chan<- Event
-	tracker  *KeyStateTracker
-	stopped  bool
+	mu            sync.Mutex
+	channels      map[Combo]chan<- Event
+	tracker       *KeyStateTracker
+	lastEventTime map[Combo]time.Time
+	stopped       bool
 
 	hook     windows.Handle
 	threadID uint32
@@ -169,9 +170,10 @@ type windowsProvider struct {
 // export windowsNewProvider
 func NewProvider() (Provider, error) {
 	return &windowsProvider{
-		channels: make(map[Combo]chan<- Event),
-		tracker:  NewKeyStateTracker(),
-		logger:   slog.Default().With("platform", "windows"),
+		channels:      make(map[Combo]chan<- Event),
+		tracker:       NewKeyStateTracker(),
+		lastEventTime: make(map[Combo]time.Time),
+		logger:        slog.Default().With("platform", "windows"),
 	}, nil
 }
 
@@ -341,6 +343,14 @@ func (p *windowsProvider) processHookEvent(wParam uintptr, lParam uintptr) {
 	defer p.mu.Unlock()
 
 	for _, e := range events {
+		if lastTime, ok := p.lastEventTime[e.Combo]; ok {
+			if now.Sub(lastTime) < 200*time.Millisecond {
+				p.logger.Debug("debounced windows hotkey event", "combo", e.Combo, "type", e.Type, "elapsed", now.Sub(lastTime))
+				continue
+			}
+		}
+		p.lastEventTime[e.Combo] = now
+
 		if ch, ok := p.channels[e.Combo]; ok {
 			select {
 			case ch <- e:
