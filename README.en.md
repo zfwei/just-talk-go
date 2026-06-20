@@ -30,11 +30,11 @@ The current development focus is Linux and macOS desktop support:
 | Linux Wayland | Supported | Works with Sway / wlroots; hotkeys use evdev and require input permissions |
 | Linux X11 | Supported | Uses native X11 global hotkeys |
 | macOS | Supported | Global hotkeys use CGEventTap, recording uses CoreAudio, clipboard uses NSPasteboard, and overlay uses AppKit NSPanel |
-| Windows | Not implemented | Not supported yet |
+| Windows | Supported | Global hotkeys use WH_KEYBOARD_LL, clipboard and auto-submit (SendInput Ctrl+V) use native Win32 API, recording uses ffmpeg/sox |
 
 ## Build
 
-Just Talk uses native platform APIs, so builds require cgo.
+Just Talk uses native platform APIs. Builds for Linux and macOS require cgo, while builds for Windows can be cross-compiled without cgo.
 
 Linux build dependencies:
 
@@ -53,11 +53,19 @@ macOS build dependencies:
 xcode-select --install
 ```
 
+Windows build dependencies:
+
+No C compiler (no CGO) is required. You can compile directly on Windows or cross-compile on Linux or macOS.
+
 Build for the current platform:
 
 ```bash
 cd just-talk-go
+# macOS & Linux (requires cgo)
 CGO_ENABLED=1 go build -o build/just-talk ./cmd/just-talk
+
+# Windows (no cgo)
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o build/just-talk.exe ./cmd/just-talk
 ```
 
 Install to `~/.local/bin/just-talk`:

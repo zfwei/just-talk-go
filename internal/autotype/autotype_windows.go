@@ -5,8 +5,10 @@ package autotype
 import (
 	"fmt"
 	"log/slog"
+	"time"
 	"unsafe"
 
+	"github.com/c/just-talk-go/internal/clipboard"
 	"golang.org/x/sys/windows"
 )
 
@@ -36,7 +38,20 @@ const (
 )
 
 func pastePlatform(text string, logger *slog.Logger) error {
-	return fmt.Errorf("autotype on Windows is not implemented")
+	cb, err := clipboard.New()
+	if err != nil {
+		return fmt.Errorf("clipboard: %w", err)
+	}
+	if err := cb.Set(text); err != nil {
+		return fmt.Errorf("set clipboard: %w", err)
+	}
+
+	time.Sleep(50 * time.Millisecond)
+	if err := simulatePaste(); err != nil {
+		return fmt.Errorf("simulate paste: %w", err)
+	}
+	logger.Debug("autotype done", "text_len", len(text), "method", pasteMethod())
+	return nil
 }
 
 func simulatePaste() error {

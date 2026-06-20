@@ -6,11 +6,11 @@ This file gives coding agents concise guidance for working in this repository.
 
 Just Talk is a desktop voice input tool. It records with a global hotkey, sends audio to streaming ASR, then copies recognized text to the clipboard or submits it into the focused input field.
 
-The current supported desktop targets are Linux and macOS. Windows is not implemented.
+The current supported desktop targets are Linux, macOS, and Windows.
 
 ## Build And Test
 
-This project uses native platform APIs and requires cgo for supported desktop builds.
+This project uses native platform APIs. Supported desktop builds require cgo on Linux and macOS, but Windows compiles without cgo (pure Go using Windows DLL syscalls).
 
 ```bash
 make build              # Build for the current platform
