@@ -58,16 +58,17 @@ func main() {
 	}
 
 	// Daemon mode: log to stderr + file. TUI mode: file only (stderr corrupts display).
+	logPath := filepath.Join(os.TempDir(), "just-talk.log")
 	var logWriter io.Writer
 	if *useTUI {
-		lf, _ := os.OpenFile("/tmp/just-talk.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		lf, _ := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 		if lf != nil {
 			logWriter = lf
 		} else {
 			logWriter = io.Discard
 		}
 	} else {
-		lf, _ := os.OpenFile("/tmp/just-talk.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		lf, _ := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 		if lf != nil {
 			logWriter = io.MultiWriter(os.Stderr, lf)
 		} else {
@@ -79,6 +80,7 @@ func main() {
 
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: failed to load config: %v\n", err)
 		logger.Error("failed to load config", "error", err)
 		os.Exit(1)
 	}
