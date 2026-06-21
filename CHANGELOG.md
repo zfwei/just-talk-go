@@ -9,6 +9,7 @@ All notable project changes are tracked here.
 - Added native Windows status overlay (status capsule) support using pure-Go Win32 layered click-through window.
 - Improved Windows status overlay design with a dark semi-transparent glassmorphic background, a small colored status dot, and dynamically centered Chinese text to prevent blocking background content.
 - Added real-time ASR streaming typing (实时上屏) support, typing definite words/phrases as they are recognized.
+- Added LLM speech post-processing correction (语音优化上屏) using Doubao LLM API on Volcengine Ark (火山方舟) to auto-correct typos, add punctuation, and remove filler words before final output (supports configurable API URL, temperature, and dynamic/configurable max_tokens).
 - Clarified README build and install setup steps for the repository directory and `~/.local/bin` PATH.
 - Restricted voice hotkeys to non-text global shortcut keys, rejecting letters, digits, punctuation, Space, and similar text-producing keys.
 - Avoid duplicate auto-submit on KDE Plasma by using uinput directly and not writing the Wayland primary selection there.

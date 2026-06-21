@@ -107,6 +107,8 @@ func displayForStatus(status voice.TUIVoiceStatus, idleVisible bool) (string, st
 		return "STP", statusColor{R: 255 << 8, G: 140 << 8, B: 60 << 8}, true
 	case "stopping":
 		return "WAI", statusColor{R: 255 << 8, G: 160 << 8, B: 70 << 8}, true
+	case "optimizing":
+		return "OPT", statusColor{R: 120 << 8, G: 160 << 8, B: 255 << 8}, true
 	case "error":
 		return "ERR", statusColor{R: 255 << 8, G: 65 << 8, B: 65 << 8}, true
 	default:

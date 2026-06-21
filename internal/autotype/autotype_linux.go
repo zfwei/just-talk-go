@@ -216,3 +216,7 @@ func pasteMethod() string {
 	}
 	return "x11/XTest+Shift+Insert"
 }
+
+func backspacePlatform(count int, logger *slog.Logger) error {
+	return nil
+}

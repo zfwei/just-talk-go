@@ -28,19 +28,29 @@ type OverlayConfig struct {
 	Scale       float64 `toml:"scale"`
 }
 
-type VoiceConfig struct {
+type CorrectionConfig struct {
 	Enabled     bool     `toml:"enabled"`
-	Mode        string   `toml:"mode"`
-	PushToTalk  string   `toml:"push_to_talk"`
-	Device      string   `toml:"device"`
-	Gain        int      `toml:"gain"`
-	StopDelayMs int      `toml:"stop_delay_ms"`
-	Language    string   `toml:"language"`
-	AutoSubmit  bool     `toml:"auto_submit"`
-	AppKey      string   `toml:"app_key"`
-	AccessKey   string   `toml:"access_key"`
-	ResourceID  string   `toml:"resource_id"`
-	Hotwords    []string `toml:"hotwords"`
+	APIKey      string   `toml:"api_key"`
+	EndpointID  string   `toml:"endpoint_id"`
+	URL         string   `toml:"url"`
+	Temperature *float64 `toml:"temperature"`
+	MaxTokens   *int     `toml:"max_tokens"`
+}
+
+type VoiceConfig struct {
+	Enabled     bool             `toml:"enabled"`
+	Mode        string           `toml:"mode"`
+	PushToTalk  string           `toml:"push_to_talk"`
+	Device      string           `toml:"device"`
+	Gain        int              `toml:"gain"`
+	StopDelayMs int              `toml:"stop_delay_ms"`
+	Language    string           `toml:"language"`
+	AutoSubmit  bool             `toml:"auto_submit"`
+	AppKey      string           `toml:"app_key"`
+	AccessKey   string           `toml:"access_key"`
+	ResourceID  string           `toml:"resource_id"`
+	Hotwords    []string         `toml:"hotwords"`
+	Correction  CorrectionConfig `toml:"correction"`
 }
 
 func Default() *Config {
@@ -48,6 +58,10 @@ func Default() *Config {
 		Voice: VoiceConfig{
 			Enabled: true, Mode: "toggle", PushToTalk: "Alt+Super",
 			Language: "zh-CN", AutoSubmit: true, ResourceID: "volc.bigasr.sauc.duration",
+			Correction: CorrectionConfig{
+				Enabled: false,
+				URL:     "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
+			},
 		},
 		Overlay: OverlayConfig{
 			Enabled: true, Position: "bottom-center", IdleVisible: false, Scale: 1.0,

@@ -1,11 +1,13 @@
 package voice
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -269,6 +271,7 @@ type VoicePlugin struct {
 	cancelHotkeyRegistered bool
 	retryHotkeyRegistered  bool
 	typedText              string
+	optimizing             bool
 }
 
 type recordingSession struct {
@@ -773,7 +776,30 @@ func (p *VoicePlugin) finishRecordingSession(session *recordingSession) {
 				audioDuration = time.Since(session.startedAt)
 			}
 			recordTUIStats(text, audioDuration)
-			p.dispatchTextOutput(text, session.autoSubmit)
+			go func(rawText string, submit bool) {
+				outputText := rawText
+				if p.cfg.Voice.Correction.Enabled {
+					p.mu.Lock()
+					p.optimizing = true
+					p.publishStatusLocked()
+					p.mu.Unlock()
+
+					optText, err := p.optimizeText(rawText)
+					if err != nil {
+						p.logger.Error("speech post-processing correction failed", "error", err)
+						pout("⚠️  语音优化失败: %v", err)
+					} else {
+						outputText = optText
+						p.logger.Info("speech post-processing correction completed", "raw", rawText, "optimized", outputText)
+					}
+
+					p.mu.Lock()
+					p.optimizing = false
+					p.publishStatusLocked()
+					p.mu.Unlock()
+				}
+				p.dispatchTextOutput(outputText, submit)
+			}(text, session.autoSubmit)
 		}
 		p.logger.Debug("finish session: closing ASR client")
 		closeDone := make(chan error, 1)
@@ -797,25 +823,42 @@ func (p *VoicePlugin) dispatchTextOutput(text string, autoSubmit bool) {
 	go func() {
 		if autoSubmit {
 			p.mu.Lock()
+			correctionEnabled := p.cfg.Voice.Correction.Enabled
 			typedRunes := []rune(p.typedText)
-			fullRunes := []rune(text)
-			var suffix string
-			if len(fullRunes) > len(typedRunes) {
-				suffix = string(fullRunes[len(typedRunes):])
-			}
 			p.typedText = text
 			p.mu.Unlock()
 
-			if suffix != "" {
-				if err := autotype.Paste(suffix, p.logger); err != nil {
+			if correctionEnabled {
+				backspaceCount := len(typedRunes)
+				if backspaceCount > 0 {
+					p.logger.Info("deleting raw stream text for correction", "count", backspaceCount)
+					if err := autotype.Backspace(backspaceCount, p.logger); err != nil {
+						p.logger.Warn("failed to delete raw stream text", "error", err)
+					}
+				}
+				if err := autotype.Paste(text, p.logger); err != nil {
 					pout("❌ 上屏失败: %v", err)
 				} else {
 					pout("📋 已复制到剪贴板")
 					pout("✅ 已上屏")
 				}
 			} else {
-				pout("📋 已复制到剪贴板")
-				pout("✅ 已上屏")
+				fullRunes := []rune(text)
+				var suffix string
+				if len(fullRunes) > len(typedRunes) {
+					suffix = string(fullRunes[len(typedRunes):])
+				}
+				if suffix != "" {
+					if err := autotype.Paste(suffix, p.logger); err != nil {
+						pout("❌ 上屏失败: %v", err)
+					} else {
+						pout("📋 已复制到剪贴板")
+						pout("✅ 已上屏")
+					}
+				} else {
+					pout("📋 已复制到剪贴板")
+					pout("✅ 已上屏")
+				}
 			}
 			if err := writeClipboard(text); err != nil {
 				p.logger.Warn("write final clipboard failed", "error", err)
@@ -872,6 +915,8 @@ func (p *VoicePlugin) publishStatusLocked() {
 	recording, stopping := p.recording, false
 
 	switch {
+	case p.optimizing:
+		state, detail = "optimizing", "语音优化中..."
 	case p.recording && p.stopping:
 		state, detail = "stopping_delayed", "等待停止延迟"
 		stopping = true
@@ -1055,4 +1100,112 @@ func (p *VoicePlugin) handleStreamingResult(definiteText string) {
 			p.logger.Warn("streaming paste failed", "error", err)
 		}
 	}(suffix)
+}
+
+type chatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type chatRequest struct {
+	Model       string        `json:"model"`
+	Messages    []chatMessage `json:"messages"`
+	Temperature *float64      `json:"temperature,omitempty"`
+	MaxTokens   int           `json:"max_tokens,omitempty"`
+}
+
+type chatResponse struct {
+	Choices []struct {
+		Message chatMessage `json:"message"`
+	} `json:"choices"`
+	Error *struct {
+		Message string `json:"message"`
+	} `json:"error,omitempty"`
+}
+
+func (p *VoicePlugin) optimizeText(text string) (string, error) {
+	apiKey := p.cfg.Voice.Correction.APIKey
+	endpointID := p.cfg.Voice.Correction.EndpointID
+	if apiKey == "" || endpointID == "" {
+		return text, fmt.Errorf("correction API key or endpoint ID is not configured")
+	}
+
+	url := p.cfg.Voice.Correction.URL
+	if url == "" {
+		url = "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
+	}
+
+	// Calculate temperature
+	var tempVal float64 = 0.1 // Default low temperature for speech post-processing
+	if p.cfg.Voice.Correction.Temperature != nil {
+		tempVal = *p.cfg.Voice.Correction.Temperature
+	}
+
+	// Calculate max_tokens dynamically if not explicitly set
+	var maxTokensVal int
+	if p.cfg.Voice.Correction.MaxTokens != nil && *p.cfg.Voice.Correction.MaxTokens > 0 {
+		maxTokensVal = *p.cfg.Voice.Correction.MaxTokens
+	} else {
+		// Dynamic: twice the text length + 100 base tokens
+		maxTokensVal = len([]rune(text))*2 + 100
+	}
+
+	reqBody := chatRequest{
+		Model:       endpointID,
+		Messages: []chatMessage{
+			{
+				Role:    "system",
+				Content: "你是一个专业的语音输入整理助手。请对输入的语音识别文本进行润色和纠错：修正错别字、语法错误，补充合适的标点符号，去除口语语气词（如“呃”、“啊”、“然后”等），使句子更加通顺自然，同时严格保持原意不变。请直接返回优化后的文本，不要带有任何解释、问候 or 前导语。",
+			},
+			{
+				Role:    "user",
+				Content: text,
+			},
+		},
+		Temperature: &tempVal,
+		MaxTokens:   maxTokensVal,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return text, err
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return text, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return text, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		var errResp chatResponse
+		json.NewDecoder(resp.Body).Decode(&errResp)
+		if errResp.Error != nil && errResp.Error.Message != "" {
+			return text, fmt.Errorf("HTTP status %d: %s", resp.StatusCode, errResp.Error.Message)
+		}
+		return text, fmt.Errorf("HTTP status %d", resp.StatusCode)
+	}
+
+	var chatResp chatResponse
+	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
+		return text, err
+	}
+
+	if len(chatResp.Choices) == 0 {
+		return text, fmt.Errorf("no choice returned from model")
+	}
+
+	optimized := strings.TrimSpace(chatResp.Choices[0].Message.Content)
+	if optimized == "" {
+		return text, fmt.Errorf("empty text returned from model")
+	}
+	return optimized, nil
 }

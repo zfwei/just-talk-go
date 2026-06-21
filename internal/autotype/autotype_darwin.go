@@ -58,6 +58,10 @@ func simulatePaste() error {
 	return nil
 }
 
+func backspacePlatform(count int, logger *slog.Logger) error {
+	return nil
+}
+
 func pasteMethod() string { return "darwin/CGEventPost+Cmd+V" }
 
 func isWaylandSession() bool { return false }

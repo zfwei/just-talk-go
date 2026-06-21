@@ -93,6 +93,42 @@ func simulatePaste() error {
 	return nil
 }
 
+func backspacePlatform(count int, logger *slog.Logger) error {
+	return simulateBackspaces(count)
+}
+
+func simulateBackspaces(count int) error {
+	if count <= 0 {
+		return nil
+	}
+	var inputs []input
+	for i := 0; i < count; i++ {
+		inputs = append(inputs, input{
+			Type: inputKeyboard,
+			Ki: keyboardInput{
+				Wvk:     0x08, // VK_BACK
+				DwFlags: 0,
+			},
+		}, input{
+			Type: inputKeyboard,
+			Ki: keyboardInput{
+				Wvk:     0x08, // VK_BACK
+				DwFlags: keyeventfKeyUp,
+			},
+		})
+	}
+	cbSize := unsafe.Sizeof(input{})
+	r1, _, err := procSendInput.Call(
+		uintptr(len(inputs)),
+		uintptr(unsafe.Pointer(&inputs[0])),
+		uintptr(cbSize),
+	)
+	if r1 == 0 {
+		return fmt.Errorf("SendInput backspaces failed: %w", err)
+	}
+	return nil
+}
+
 func pasteMethod() string { return "windows/SendInput+Ctrl+V" }
 
 func isWaylandSession() bool { return false }

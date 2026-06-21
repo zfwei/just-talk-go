@@ -235,6 +235,8 @@ func translateLabel(label string) string {
 		return "延迟中"
 	case "WAI":
 		return "识别中"
+	case "OPT":
+		return "优化中"
 	case "ERR":
 		return "出错了"
 	case "IDL":
