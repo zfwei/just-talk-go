@@ -19,7 +19,6 @@ var (
 )
 
 type keyboardInput struct {
-	Type    uint32
 	Wvk     uint16
 	Wscan   uint16
 	DwFlags uint32
@@ -30,6 +29,7 @@ type keyboardInput struct {
 type input struct {
 	Type uint32
 	Ki   keyboardInput
+	_    [8]byte
 }
 
 const (
@@ -82,11 +82,14 @@ func simulatePaste() error {
 	}
 
 	cbSize := unsafe.Sizeof(input{})
-	procSendInput.Call(
+	r1, _, err := procSendInput.Call(
 		uintptr(len(inputs)),
 		uintptr(unsafe.Pointer(&inputs[0])),
 		uintptr(cbSize),
 	)
+	if r1 == 0 {
+		return fmt.Errorf("SendInput returned 0 (all inputs blocked or invalid struct size), error: %w", err)
+	}
 	return nil
 }
 
