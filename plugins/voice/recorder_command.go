@@ -46,7 +46,11 @@ func startCommandCapture(logger *slog.Logger, device string) (io.ReadCloser, str
 		if cmd.Process != nil {
 			_ = cmd.Process.Kill()
 		}
-		return cmd.Wait()
+		err := cmd.Wait()
+		if err != nil && stderrBuf.Len() > 0 {
+			logger.Error("recorder process exited with error", "backend", name, "error", err, "stderr", stderrBuf.String())
+		}
+		return err
 	}
 	return stdout, name, stop, nil
 }

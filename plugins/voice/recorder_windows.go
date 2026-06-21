@@ -15,7 +15,7 @@ func pickCommand() (*exec.Cmd, string, error) {
 		{"ffmpeg", []string{
 			"-f", "dshow", "-i", "audio=default",
 			"-ar", "16000", "-ac", "1", "-f", "s16le",
-			"-loglevel", "quiet", "-",
+			"-loglevel", "error", "-",
 		}},
 		// sox with waveaudio driver
 		{"sox", []string{
@@ -34,7 +34,7 @@ func pickCommandWithDevice(device string) (*exec.Cmd, string, error) {
 		{"ffmpeg", []string{
 			"-f", "dshow", "-i", "audio=" + device,
 			"-ar", "16000", "-ac", "1", "-f", "s16le",
-			"-loglevel", "quiet", "-",
+			"-loglevel", "error", "-",
 		}},
 		{"sox", []string{
 			"-t", "waveaudio", device,
