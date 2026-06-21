@@ -57,6 +57,8 @@ var (
 	procSetTextColor           = gdi32.NewProc("SetTextColor")
 	procSetBkMode              = gdi32.NewProc("SetBkMode")
 	procGetStockObject         = gdi32.NewProc("GetStockObject")
+	procGetTextExtentPoint32W  = gdi32.NewProc("GetTextExtentPoint32W")
+	procEllipse                = gdi32.NewProc("Ellipse")
 )
 
 type wndClassEx struct {
@@ -102,6 +104,11 @@ type msg struct {
 type point struct {
 	X int32
 	Y int32
+}
+
+type size struct {
+	Cx int32
+	Cy int32
 }
 
 type windowsBackend struct {
@@ -191,8 +198,9 @@ func newWindowsBackend(cfg config.OverlayConfig) (backend, error) {
 			return
 		}
 
-		// Set color key: RGB(1, 1, 1) -> transparent (LWA_COLORKEY = 1)
-		procSetLayeredWindowAttr.Call(hwnd, 0x010101, 255, 1)
+		// Set color key and alpha: RGB(1, 1, 1) -> transparent, alpha -> 200 (approx 78% opacity)
+		// LWA_COLORKEY | LWA_ALPHA = 1 | 2 = 3
+		procSetLayeredWindowAttr.Call(hwnd, 0x010101, 200, 3)
 
 		b.hwnd = windows.HWND(hwnd)
 		activeBackend = b
@@ -361,20 +369,16 @@ func (b *windowsBackend) paint(hdc uintptr) {
 	var r rect
 	procGetClientRect.Call(uintptr(b.hwnd), uintptr(unsafe.Pointer(&r)))
 
+	// Fill background with color key (transparent chroma key)
 	colorKeyBrush, _, _ := procCreateSolidBrush.Call(0x010101) // RGB(1,1,1) -> 0x010101
 	defer procDeleteObject.Call(colorKeyBrush)
-
 	procFillRect.Call(hdc, uintptr(unsafe.Pointer(&r)), colorKeyBrush)
 
-	rVal := byte(color.R >> 8)
-	gVal := byte(color.G >> 8)
-	bVal := byte(color.B >> 8)
-	pillColorRef := uint32(rVal) | (uint32(gVal) << 8) | (uint32(bVal) << 16)
+	// Draw the pill background (sleek dark grey RGB(25, 25, 25) with rounded corners)
+	bgBrush, _, _ := procCreateSolidBrush.Call(0x191919) // RGB(25, 25, 25) -> 0x191919
+	defer procDeleteObject.Call(bgBrush)
 
-	pillBrush, _, _ := procCreateSolidBrush.Call(uintptr(pillColorRef))
-	defer procDeleteObject.Call(pillBrush)
-
-	oldBrush, _, _ := procSelectObject.Call(hdc, pillBrush)
+	oldBrush, _, _ := procSelectObject.Call(hdc, bgBrush)
 	defer procSelectObject.Call(hdc, oldBrush)
 
 	nullPen, _, _ := procGetStockObject.Call(8) // NULL_PEN = 8
@@ -384,9 +388,7 @@ func (b *windowsBackend) paint(hdc uintptr) {
 	corner := int32(h / 2)
 	procRoundRect.Call(hdc, 0, 0, uintptr(w), uintptr(h), uintptr(corner), uintptr(corner))
 
-	procSetTextColor.Call(hdc, 0xFFFFFF) // White
-	procSetBkMode.Call(hdc, 1)           // TRANSPARENT = 1
-
+	// Load font to calculate text size
 	fontNameW := windows.StringToUTF16Ptr("Segoe UI")
 	fontH := -int32(14.0 * float64(h) / 42.0)
 	if fontH > -10 {
@@ -406,7 +408,45 @@ func (b *windowsBackend) paint(hdc uintptr) {
 		}()
 	}
 
-	labelW := windows.StringToUTF16Ptr(label)
+	// Calculate text size for precise centering
+	labelUTF16, _ := windows.UTF16FromString(label)
+	var sz size
+	procGetTextExtentPoint32W.Call(hdc, uintptr(unsafe.Pointer(&labelUTF16[0])), uintptr(len(labelUTF16)-1), uintptr(unsafe.Pointer(&sz)))
+
+	// Calculate coordinates
+	dotSize := int32(10.0 * float64(h) / 42.0)
+	if dotSize < 6 {
+		dotSize = 6
+	}
+	gap := int32(8.0 * float64(h) / 42.0)
+	textW := sz.Cx
+	contentW := dotSize + gap + textW
+	dotX := (int32(w) - contentW) / 2
+	if dotX < 6 {
+		dotX = 6
+	}
+	dotY := (int32(h) - dotSize) / 2
+
+	// Draw the status dot
+	rVal := byte(color.R >> 8)
+	gVal := byte(color.G >> 8)
+	bVal := byte(color.B >> 8)
+	pillColorRef := uint32(rVal) | (uint32(gVal) << 8) | (uint32(bVal) << 16)
+
+	dotBrush, _, _ := procCreateSolidBrush.Call(uintptr(pillColorRef))
+	defer procDeleteObject.Call(dotBrush)
+
+	oldBrush2, _, _ := procSelectObject.Call(hdc, dotBrush)
+	defer procSelectObject.Call(hdc, oldBrush2)
+
+	procEllipse.Call(hdc, uintptr(dotX), uintptr(dotY), uintptr(dotX+dotSize), uintptr(dotY+dotSize))
+
+	// Draw text
+	procSetTextColor.Call(hdc, 0xF5F5F5) // Off-white: RGB(245, 245, 245) -> 0x00F5F5F5
+	procSetBkMode.Call(hdc, 1)           // TRANSPARENT = 1
+
+	textX := dotX + dotSize + gap
+	textRect := rect{Left: textX, Top: 0, Right: int32(w), Bottom: int32(h)}
 	minusOne := int32(-1)
-	procDrawTextW.Call(hdc, uintptr(unsafe.Pointer(labelW)), uintptr(minusOne), uintptr(unsafe.Pointer(&r)), 1|4|32) // DT_CENTER | DT_VCENTER | DT_SINGLELINE
+	procDrawTextW.Call(hdc, uintptr(unsafe.Pointer(&labelUTF16[0])), uintptr(minusOne), uintptr(unsafe.Pointer(&textRect)), 0|4|32) // DT_LEFT | DT_VCENTER | DT_SINGLELINE
 }

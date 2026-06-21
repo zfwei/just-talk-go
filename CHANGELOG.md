@@ -7,6 +7,7 @@ All notable project changes are tracked here.
 - Added Windows platform support with native low-level keyboard hooks (WH_KEYBOARD_LL) for global hotkeys, native Win32 API clipboard, auto-submit/simulate-paste (SendInput Ctrl+V), and Windows doctor checks.
 - Fixed Win32 INPUT structure layout and size alignment in autotype on Windows to make SendInput and auto-submit (自动上屏) work correctly.
 - Added native Windows status overlay (status capsule) support using pure-Go Win32 layered click-through window.
+- Improved Windows status overlay design with a dark semi-transparent glassmorphic background, a small colored status dot, and dynamically centered Chinese text to prevent blocking background content.
 - Added real-time ASR streaming typing (实时上屏) support, typing definite words/phrases as they are recognized.
 - Clarified README build and install setup steps for the repository directory and `~/.local/bin` PATH.
 - Restricted voice hotkeys to non-text global shortcut keys, rejecting letters, digits, punctuation, Space, and similar text-producing keys.
