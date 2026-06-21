@@ -1170,6 +1170,7 @@ func (p *VoicePlugin) optimizeText(text string) (string, error) {
 	if err != nil {
 		return text, err
 	}
+	p.logger.Info("Volcengine Ark chat completions request", "url", url, "body", string(jsonData))
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
@@ -1185,9 +1186,15 @@ func (p *VoicePlugin) optimizeText(text string) (string, error) {
 	}
 	defer resp.Body.Close()
 
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return text, fmt.Errorf("read response body: %w", err)
+	}
+	p.logger.Info("Volcengine Ark chat completions response", "status", resp.StatusCode, "body", string(respBytes))
+
 	if resp.StatusCode != http.StatusOK {
 		var errResp chatResponse
-		json.NewDecoder(resp.Body).Decode(&errResp)
+		json.Unmarshal(respBytes, &errResp)
 		if errResp.Error != nil && errResp.Error.Message != "" {
 			return text, fmt.Errorf("HTTP status %d: %s", resp.StatusCode, errResp.Error.Message)
 		}
@@ -1195,7 +1202,7 @@ func (p *VoicePlugin) optimizeText(text string) (string, error) {
 	}
 
 	var chatResp chatResponse
-	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
+	if err := json.Unmarshal(respBytes, &chatResp); err != nil {
 		return text, err
 	}
 

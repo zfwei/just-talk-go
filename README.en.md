@@ -30,7 +30,7 @@ The current development focus is Linux and macOS desktop support:
 | Linux Wayland | Supported | Works with Sway / wlroots; hotkeys use evdev and require input permissions |
 | Linux X11 | Supported | Uses native X11 global hotkeys |
 | macOS | Supported | Global hotkeys use CGEventTap, recording uses CoreAudio, clipboard uses NSPasteboard, and overlay uses AppKit NSPanel |
-| Windows | Supported | Global hotkeys use WH_KEYBOARD_LL, clipboard and auto-submit (SendInput Ctrl+V) use native Win32 API, recording uses ffmpeg/sox |
+| Windows | Supported | Global hotkeys use WH_KEYBOARD_LL, clipboard and auto-submit use native Win32 API, recording uses ffmpeg/sox. Supports translucent status capsule overlay, real-time streaming typing, and Doubao LLM correction |
 
 ## Build
 

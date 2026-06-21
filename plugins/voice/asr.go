@@ -62,14 +62,16 @@ func NewASRClient(cfg ASRConfig, logger *slog.Logger) *ASRClient {
 
 func (c *ASRClient) Connect(ctx context.Context) error {
 	url := "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async"
-	c.logger.Info("connecting to ASR", "url", url)
+	reqID := uuid.New().String()
+	connID := uuid.New().String()
+	c.logger.Info("connecting to ASR", "url", url, "resource_id", c.cfg.ResourceID, "request_id", reqID, "connection_id", connID)
 	conn, resp, err := websocket.Dial(ctx, url, &websocket.DialOptions{
 		HTTPHeader: map[string][]string{
 			"X-Api-App-Key":     {c.cfg.AppKey},
 			"X-Api-Access-Key":  {c.cfg.AccessKey},
 			"X-Api-Resource-Id": {c.cfg.ResourceID},
-			"X-Api-Request-Id":  {uuid.New().String()},
-			"X-Api-Connect-Id":  {uuid.New().String()},
+			"X-Api-Request-Id":  {reqID},
+			"X-Api-Connect-Id":  {connID},
 			"X-Api-Sequence":    {"-1"},
 		},
 	})
@@ -94,6 +96,9 @@ func (c *ASRClient) SendAudio(ctx context.Context, pcm []byte, isLast bool) erro
 	flags := byte(0x00)
 	if isLast {
 		flags = 0x02
+		c.logger.Info("sending ASR final audio chunk", "size", len(pcm))
+	} else {
+		c.logger.Debug("sending ASR audio chunk", "size", len(pcm))
 	}
 	header := []byte{hdrVersion | hdrHeaderSize, msgAudioOnly | flags, hdrRawAudio, 0x00}
 	size := make([]byte, 4)
@@ -147,6 +152,7 @@ func (c *ASRClient) sendFullClientRequest(ctx context.Context) error {
 		"request": request,
 	}
 	jsonBytes, _ := json.Marshal(payload)
+	c.logger.Info("sending ASR full client request payload", "payload", string(jsonBytes))
 	header := []byte{hdrVersion | hdrHeaderSize, msgFullClientReq, hdrJSON, 0x00}
 	size := make([]byte, 4)
 	binary.BigEndian.PutUint32(size, uint32(len(jsonBytes)))
@@ -191,6 +197,7 @@ func (c *ASRClient) parseResponse(data []byte) {
 		return
 	}
 	payload := data[12 : 12+payloadSize]
+	c.logger.Info("received ASR response payload", "flags", flags, "payload", string(payload))
 	var resp struct {
 		Result struct {
 			Text       string `json:"text"`
