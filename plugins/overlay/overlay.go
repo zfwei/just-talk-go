@@ -43,9 +43,6 @@ func (p *Plugin) Init(env engine.PluginEnv) error {
 }
 
 func (p *Plugin) Start(ctx context.Context) error {
-	if !p.cfg.Enabled {
-		return nil
-	}
 	b, err := newBackend(p.cfg)
 	if err != nil {
 		p.logger.Warn("overlay unavailable", "error", err)
@@ -74,8 +71,16 @@ func (p *Plugin) Stop() error {
 	return nil
 }
 
+func (p *Plugin) OnConfigReload(cfg *config.Config) error {
+	p.cfg = cfg.Overlay
+	return nil
+}
+
 func (p *Plugin) sync(status voice.TUIVoiceStatus) {
 	label, color, visible := displayForStatus(status, p.cfg.IdleVisible)
+	if !p.cfg.Enabled {
+		visible = false
+	}
 	if status.State == p.lastState && label == p.lastLabel && visible == p.lastVisible {
 		return
 	}

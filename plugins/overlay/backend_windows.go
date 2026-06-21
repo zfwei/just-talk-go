@@ -42,6 +42,8 @@ var (
 	procLoadCursorW            = user32.NewProc("LoadCursorW")
 	procPostMessageW           = user32.NewProc("PostMessageW")
 	procFillRect               = user32.NewProc("FillRect")
+	procDrawTextW              = user32.NewProc("DrawTextW")
+	procSystemParametersInfoW  = user32.NewProc("SystemParametersInfoW")
 
 	kernel32             = windows.NewLazySystemDLL("kernel32.dll")
 	procGetModuleHandleW = kernel32.NewProc("GetModuleHandleW")
@@ -54,7 +56,6 @@ var (
 	procSelectObject           = gdi32.NewProc("SelectObject")
 	procSetTextColor           = gdi32.NewProc("SetTextColor")
 	procSetBkMode              = gdi32.NewProc("SetBkMode")
-	procDrawTextW              = gdi32.NewProc("DrawTextW")
 	procGetStockObject         = gdi32.NewProc("GetStockObject")
 )
 
@@ -216,9 +217,28 @@ func newWindowsBackend(cfg config.OverlayConfig) (backend, error) {
 	return b, nil
 }
 
+func translateLabel(label string) string {
+	switch label {
+	case "CON":
+		return "连接中"
+	case "REC":
+		return "录音中"
+	case "STP":
+		return "延迟中"
+	case "WAI":
+		return "识别中"
+	case "ERR":
+		return "出错了"
+	case "IDL":
+		return "已就绪"
+	default:
+		return label
+	}
+}
+
 func (b *windowsBackend) Show(label string, color statusColor) error {
 	b.mu.Lock()
-	b.label = label
+	b.label = translateLabel(label)
 	b.color = color
 	b.mu.Unlock()
 
@@ -257,34 +277,53 @@ func (b *windowsBackend) Close() error {
 }
 
 func getPosition(w, h int, pos string, margin int) (x, y int) {
-	scrW, _, _ := procGetSystemMetrics.Call(0) // SM_CXSCREEN = 0
-	scrH, _, _ := procGetSystemMetrics.Call(1) // SM_CYSCREEN = 1
+	var workArea rect
+	// SPI_GETWORKAREA = 48
+	ret, _, _ := procSystemParametersInfoW.Call(48, 0, uintptr(unsafe.Pointer(&workArea)), 0)
 
-	sw := int(scrW)
-	sh := int(scrH)
+	var sw, sh int
+	var left, top, right, bottom int
 
-	x = sw - w - margin
-	y = margin
+	if ret != 0 {
+		left = int(workArea.Left)
+		top = int(workArea.Top)
+		right = int(workArea.Right)
+		bottom = int(workArea.Bottom)
+		sw = right - left
+		sh = bottom - top
+	} else {
+		scrW, _, _ := procGetSystemMetrics.Call(0) // SM_CXSCREEN = 0
+		scrH, _, _ := procGetSystemMetrics.Call(1) // SM_CYSCREEN = 1
+		sw = int(scrW)
+		sh = int(scrH)
+		left = 0
+		top = 0
+		right = sw
+		bottom = sh
+	}
+
+	x = right - w - margin
+	y = top + margin
 
 	switch strings.ToLower(pos) {
 	case "top-left":
-		x = margin
-		y = margin
+		x = left + margin
+		y = top + margin
 	case "top-center":
-		x = (sw - w) / 2
-		y = margin
+		x = left + (sw-w)/2
+		y = top + margin
 	case "top-right":
-		x = sw - w - margin
-		y = margin
+		x = right - w - margin
+		y = top + margin
 	case "bottom-left":
-		x = margin
-		y = sh - h - margin
+		x = left + margin
+		y = bottom - h - margin
 	case "bottom-center":
-		x = (sw - w) / 2
-		y = sh - h - margin
+		x = left + (sw-w)/2
+		y = bottom - h - margin
 	case "bottom-right":
-		x = sw - w - margin
-		y = sh - h - margin
+		x = right - w - margin
+		y = bottom - h - margin
 	}
 	return x, y
 }
