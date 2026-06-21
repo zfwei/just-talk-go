@@ -3,6 +3,8 @@
 package doctor
 
 import (
+	"strings"
+
 	"github.com/c/just-talk-go/config"
 )
 
@@ -25,6 +27,13 @@ func runPlatform(cfg *config.Config, backend string) Report {
 		[]string{"ffmpeg", "sox"},
 		"请安装 ffmpeg 并将其路径添加到系统 PATH 环境变量。您可以在 PowerShell 中运行：\n  winget install Gnu.FFmpeg",
 	)
+	if recCheck.OK && strings.Contains(recCheck.Detail, "ffmpeg") {
+		recCheck.Notes = append(recCheck.Notes,
+			"提示：若录制无声，请在 CMD/PowerShell 运行以下命令获取您电脑的所有麦克风名称：",
+			"  ffmpeg -list_devices true -f dshow -i dummy",
+			"  然后在 config.toml 中配置：[voice] device = \"您的麦克风设备名称\"",
+		)
+	}
 	report.Checks = append(report.Checks, recCheck)
 
 	// 2. Global Hotkey Interface

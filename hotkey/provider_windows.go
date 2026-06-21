@@ -30,7 +30,7 @@ var (
 const (
 	whKeyboardLL = 13
 	wmQuit       = 0x0012
-	llkhfUp      = 0x8000
+	llkhfUp      = 0x0080
 )
 
 // Windows virtual key codes not in windows package.
