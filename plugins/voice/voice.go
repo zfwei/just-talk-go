@@ -268,6 +268,7 @@ type VoicePlugin struct {
 	flowActive             bool
 	cancelHotkeyRegistered bool
 	retryHotkeyRegistered  bool
+	typedText              string
 }
 
 type recordingSession struct {
@@ -543,6 +544,7 @@ func (p *VoicePlugin) startRecording() {
 	startedAt := time.Now()
 	p.recorder, p.recording, p.userStopped = rec, true, false
 	p.startedAt = startedAt
+	p.typedText = ""
 	p.stopping = false
 	p.stopAt = time.Time{}
 	p.clearErrorLocked()
@@ -606,6 +608,10 @@ func (p *VoicePlugin) connectASR(ctx context.Context, cancel context.CancelFunc,
 				pout("\n🎤 最终: %s", result.Text)
 			} else if result.Text != "" {
 				pout("\r🎤 %s", result.Text)
+			}
+
+			if p.autoSubmit {
+				p.handleStreamingResult(result.DefiniteText)
 			}
 		}
 	}()
@@ -790,11 +796,29 @@ func (p *VoicePlugin) finishRecordingSession(session *recordingSession) {
 func (p *VoicePlugin) dispatchTextOutput(text string, autoSubmit bool) {
 	go func() {
 		if autoSubmit {
-			if err := autotype.Paste(text, p.logger); err != nil {
-				pout("❌ 上屏失败: %v", err)
+			p.mu.Lock()
+			typedRunes := []rune(p.typedText)
+			fullRunes := []rune(text)
+			var suffix string
+			if len(fullRunes) > len(typedRunes) {
+				suffix = string(fullRunes[len(typedRunes):])
+			}
+			p.typedText = text
+			p.mu.Unlock()
+
+			if suffix != "" {
+				if err := autotype.Paste(suffix, p.logger); err != nil {
+					pout("❌ 上屏失败: %v", err)
+				} else {
+					pout("📋 已复制到剪贴板")
+					pout("✅ 已上屏")
+				}
 			} else {
 				pout("📋 已复制到剪贴板")
 				pout("✅ 已上屏")
+			}
+			if err := writeClipboard(text); err != nil {
+				p.logger.Warn("write final clipboard failed", "error", err)
 			}
 			return
 		}
@@ -1006,4 +1030,29 @@ func writeClipboard(text string) error {
 		return err
 	}
 	return cb.Set(text)
+}
+
+func (p *VoicePlugin) handleStreamingResult(definiteText string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if !p.recording {
+		return
+	}
+
+	typedRunes := []rune(p.typedText)
+	defRunes := []rune(definiteText)
+
+	if len(defRunes) <= len(typedRunes) {
+		return
+	}
+
+	suffix := string(defRunes[len(typedRunes):])
+	p.typedText = definiteText
+
+	go func(textToPaste string) {
+		if err := autotype.Paste(textToPaste, p.logger); err != nil {
+			p.logger.Warn("streaming paste failed", "error", err)
+		}
+	}(suffix)
 }

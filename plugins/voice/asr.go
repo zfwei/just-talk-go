@@ -35,9 +35,10 @@ type ASRClient struct {
 }
 
 type ASRResult struct {
-	Text    string
-	IsFinal bool
-	Error   error
+	Text         string
+	DefiniteText string
+	IsFinal      bool
+	Error        error
 }
 
 const (
@@ -203,18 +204,28 @@ func (c *ASRClient) parseResponse(data []byte) {
 		return
 	}
 	text := resp.Result.Text
-	isFinal := flags == 0x02 || flags == 0x03
+
+	isConnectionFinal := flags == 0x02 || flags == 0x03
+	isSegmentFinal := isConnectionFinal
+	var definiteParts []string
 	for _, u := range resp.Result.Utterances {
 		if u.Definite {
-			isFinal = true
+			isSegmentFinal = true
+			definiteParts = append(definiteParts, u.Text)
 		}
 	}
+	definiteText := strings.Join(definiteParts, "")
+
 	if text != "" {
 		c.textMu.Lock()
 		c.lastText = text
 		c.textMu.Unlock()
-		c.resultCh <- ASRResult{Text: text, IsFinal: isFinal}
-		if isFinal {
+		c.resultCh <- ASRResult{
+			Text:         text,
+			DefiniteText: definiteText,
+			IsFinal:      isSegmentFinal,
+		}
+		if isConnectionFinal {
 			c.finalOnce.Do(func() { close(c.final) })
 		}
 	}
