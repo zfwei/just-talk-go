@@ -343,13 +343,15 @@ func (p *windowsProvider) processHookEvent(wParam uintptr, lParam uintptr) {
 	defer p.mu.Unlock()
 
 	for _, e := range events {
-		if lastTime, ok := p.lastEventTime[e.Combo]; ok {
-			if now.Sub(lastTime) < 200*time.Millisecond {
-				p.logger.Debug("debounced windows hotkey event", "combo", e.Combo, "type", e.Type, "elapsed", now.Sub(lastTime))
-				continue
+		if e.Type == KeyDown {
+			if lastTime, ok := p.lastEventTime[e.Combo]; ok {
+				if now.Sub(lastTime) < 200*time.Millisecond {
+					p.logger.Debug("debounced windows hotkey event", "combo", e.Combo, "type", e.Type, "elapsed", now.Sub(lastTime))
+					continue
+				}
 			}
+			p.lastEventTime[e.Combo] = now
 		}
-		p.lastEventTime[e.Combo] = now
 
 		if ch, ok := p.channels[e.Combo]; ok {
 			select {
