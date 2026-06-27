@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/c/just-talk-go/config"
 	"github.com/c/just-talk-go/hotkey"
@@ -211,9 +212,15 @@ func (e *Engine) WatchConfig(path string) {
 
 	go func() {
 		defer watcher.Close()
+		var timer *time.Timer
+		var timerCh <-chan time.Time
+
 		for {
 			select {
 			case <-e.ctx.Done():
+				if timer != nil {
+					timer.Stop()
+				}
 				return
 			case event, ok := <-watcher.Events:
 				if !ok {
@@ -222,27 +229,35 @@ func (e *Engine) WatchConfig(path string) {
 				if filepath.Base(event.Name) != base {
 					continue
 				}
-				if event.Has(fsnotify.Write) {
-					e.logger.Info("config file changed, reloading", "path", path)
-					newCfg, err := config.Load(path)
-					if err != nil {
-						e.logger.Error("failed to reload config", "error", err)
-						continue
+				if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) {
+					if timer != nil {
+						timer.Stop()
 					}
-					// Update engine config
-					e.mu.Lock()
-					if e.ctx.Err() != nil {
-						e.mu.Unlock()
-						return
-					}
-					e.cfg = newCfg
+					timer = time.NewTimer(150 * time.Millisecond)
+					timerCh = timer.C
+				}
+			case <-timerCh:
+				timer = nil
+				timerCh = nil
+				e.logger.Info("config file changed, reloading", "path", path)
+				newCfg, err := config.Load(path)
+				if err != nil {
+					e.logger.Error("failed to reload config", "error", err)
+					continue
+				}
+				// Update engine config
+				e.mu.Lock()
+				if e.ctx.Err() != nil {
 					e.mu.Unlock()
-					// Notify plugins
-					for _, p := range e.plugins {
-						if r, ok := p.(Reloader); ok {
-							if err := r.OnConfigReload(newCfg); err != nil {
-								e.logger.Error("plugin config reload failed", "plugin", p.Name(), "error", err)
-							}
+					return
+				}
+				e.cfg = newCfg
+				e.mu.Unlock()
+				// Notify plugins
+				for _, p := range e.plugins {
+					if r, ok := p.(Reloader); ok {
+						if err := r.OnConfigReload(newCfg); err != nil {
+							e.logger.Error("plugin config reload failed", "plugin", p.Name(), "error", err)
 						}
 					}
 				}

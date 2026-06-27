@@ -272,6 +272,7 @@ type VoicePlugin struct {
 	retryHotkeyRegistered  bool
 	typedText              string
 	optimizing             bool
+	httpClient             *http.Client
 }
 
 type recordingSession struct {
@@ -284,7 +285,19 @@ type recordingSession struct {
 	startedAt   time.Time
 }
 
-func NewVoicePlugin() *VoicePlugin     { return &VoicePlugin{stopDelayMs: defaultStopDelayMs} }
+func NewVoicePlugin() *VoicePlugin {
+	return &VoicePlugin{
+		stopDelayMs: defaultStopDelayMs,
+		httpClient: &http.Client{
+			Timeout: 10 * time.Second,
+			Transport: &http.Transport{
+				MaxIdleConns:        10,
+				IdleConnTimeout:     90 * time.Second,
+				TLSHandshakeTimeout: 5 * time.Second,
+			},
+		},
+	}
+}
 func (p *VoicePlugin) Name() string    { return "voice" }
 func (p *VoicePlugin) Version() string { return "0.6.0" }
 
@@ -1179,7 +1192,10 @@ func (p *VoicePlugin) optimizeText(text string) (string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := p.httpClient
+	if client == nil {
+		client = &http.Client{Timeout: 10 * time.Second}
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return text, err

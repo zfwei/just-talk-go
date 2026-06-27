@@ -277,12 +277,13 @@ func (b *windowsBackend) Hide() error {
 }
 
 func (b *windowsBackend) Close() error {
-	if b.hwnd == 0 {
+	hwnd := b.hwnd
+	if hwnd == 0 {
 		return nil
 	}
-	procPostMessageW.Call(uintptr(b.hwnd), 0x0010, 0, 0) // WM_CLOSE = 0x0010
 	b.hwnd = 0
 	activeBackend = nil
+	procPostMessageW.Call(uintptr(hwnd), 0x0010, 0, 0) // WM_CLOSE = 0x0010
 	return nil
 }
 
@@ -351,6 +352,10 @@ func wndProc(hwnd uintptr, message uint32, wparam uintptr, lparam uintptr) uintp
 
 	case 0x0014: // WM_ERASEBKGND
 		return 1
+
+	case 0x0010: // WM_CLOSE
+		procDestroyWindow.Call(hwnd)
+		return 0
 
 	case 0x0002: // WM_DESTROY
 		procPostQuitMessage.Call(0)
